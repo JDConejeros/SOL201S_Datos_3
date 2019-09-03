@@ -8,6 +8,8 @@
 #Ejercicio I: Procesamiento en R
 ##############################################################
 rm(list = ls()) #Limpiamos la memoria
+install.packages("dplyr")
+install.packages("car")
 library(dplyr)#Para manipulación de datos
 library(car)#Funciones para estimar regresiones
 search() #Revisamos los paquetes y herramientas instaladas
@@ -81,6 +83,7 @@ str(subset_psu_sample)
 
 #Obtenemos una tabla resumen de nuestra variable
 #5505 hombres (código 1) y 6306 mujeres (código 2)
+?recode
 table(subset_psu_sample$sexo)
 
 #Generamos una nueva variable a partir de la existente
@@ -94,6 +97,7 @@ subset_psu_sample$genero <-factor(subset_psu_sample$genero, levels = c(0,1), lab
 
 #Revisamos nuestra variable final
 table(subset_psu_sample$genero)
+table(subset_psu_sample$sexo)
 
 ##############################################################
 
@@ -122,7 +126,7 @@ table(subset_psu_sample$dependencia)
 ##############################################################
 
 ## 6. Filtre su base de datos solo con las observaciones que provengan de colegios municipales
-#y sean menores de 19 años.
+#y sean menores de 20 años.
 
 #Filtramos la base de datos con las dos condiciones al mismo tiempo.
 #Operador lógico "&" y Utilizamos una tubería

@@ -168,7 +168,7 @@ abline(lm(mate ~ x_nem,data=psu_sample), col="red")
 
 #Primero identificamos el promedio NEM más bajo
 min(psu_sample$x_nem)
-#Segundo identificamos el promedio NEM más bajo
+#Segundo identificamos el promedio NEM en el centro de la distribución
 median(psu_sample$x_nem)
 #Tercero identificamos el promedio NEM más alto
 max(psu_sample$x_nem)
