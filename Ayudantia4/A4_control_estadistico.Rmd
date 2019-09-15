@@ -1,0 +1,308 @@
+---
+title: 'Ayudantía IV: Control Estadístico'
+author:
+- affiliation: Profesor Instituto de Sociología PUC
+  email: lmaldona@uc.cl
+  name: Luis Maldonado
+- affiliation: Estudiante Magíster en Sociología PUC
+  email: cirufs@uc.cl
+  name: Catalina Rufs
+- affiliation: Estudiante Magíster en Sociología PUC
+  email: jdconejeros@uc.cl
+  name: José Daniel Conejeros
+date: '`r format(Sys.time(), "%d/%m/%Y")`'
+output:
+  html_document:
+    code_folding: show
+    highlight: tango
+    theme: cosmo
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+subtitle: SOL201S - Análisis Datos III
+---
+<style type="text/css">
+h1.title {
+  font-size: 38px;
+  color: Dark;
+  font-weight:bold;
+}
+</style>
+ 
+---
+
+# **Objetivos**
+
++ Introducir el método de control estadístico en `R`
++ Introducir al método de regresión múltiple en `R` 
+ 
+---
+
+# **Contexto del ejercicio**
+
+Suponga la siguiente hipótesis: 
+
+Los estudiantes que tuvieron un mejor rendimiento académico en la enseñanza media se va a ver asociado con un mejor resultado en el puntaje obtenido en la PSU de matemáticas.  
+
+Este es el modelo teórico que sustenta nuestra hipótesis:
+
+<br/>
+
+<center>
+<div style="background-color:lavender">
+$$PSUMate_{} = \beta_{0} + \beta_{1}nem_{i} + \mu$$
+</div>
+</center>
+
+<br/>
+
++ **¿Qué consecuencias tendría que otras variables afecten el puntaje alcanzado en la PSU de matemáticas?**
+
+---
+
+# **Datos**
+
+En esta oportunidad seguiremos usando la base de datos `psu`, la cual es un extracto con información de 9623 estudiantes que rindieron la PSU para el año 2016. La base de datos contiene una serie de variables con información individual de la muestra de estudiantes que rindieron la prueba. Las variables de interés para testear en esta ayudantía son: 
+
++ `mate`: Puntajes en la PSU de matemáticas (continua)
++ `x_nem`: Promedio de notas de enseñanza media (continua) 
++ `educpadre`: años de educación del padre (continua)
++ `educmadre`: años de educación de la madre (continua)
++ `leng`: Puntajes en la PSU de lenguaje (continua)
+
+Además utilizaremos las funciones base de `R` y las librerías `dplyr`, `car` y `readstata13`. Aplicamos las siguientes configuraciones inciales: 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+##Configuraciones iniciales
+rm(list = ls()) #Limpiamos la memoria
+#install.packages("dplyr")#Para manipulación de datos
+#install.packages("car")#Funciones para estimar regresiones
+#install.packages("readstata13") #lectura/importar de bases de datos en stata
+#install.packages("stargazer") #Paquete que nos permite visualizar regresiones
+#install.packages("skimr") #Paquete de exploración de datos
+
+##Cargar librerías
+library(dplyr)
+library(car)
+library(readstata13) #Leer base de datos en formato stata
+library(stargazer) #Paquete que nos permite visualizar regresiones
+library(skimr)
+#search() #Revisamos los paquetes y herramientas instaladas
+options(scipen=999) #Desactivamos la notación científica
+```
+
+---
+
+# **Ejercicio**
+
+**1.Carge los datos `psu_sample` y mantenga solamente las variables necesarias para responder a las hipótesis**.
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Importamos la base que está en formato dta con el paquete readstata13
+psu <- read.dta13("psu_sample.dta", convert.factors = T)
+#Seleccionamos las variables:
+psu <- subset(psu, select = c(mate,x_nem,educpadre,educmadre,leng))
+head(psu)
+```
+
+---
+
+**2. Revise el comportamiento de sus datos. ¿Qué rango de valores ocupan? ¿Qué observaciones puede extraer a partir de esta descripción?**
+
++ Estadística descriptiva:
+
+```{r, echo=TRUE, eval=TRUE, out.width='80%'}
+#Obtenemos un summary con las principales variables de la base filtrada
+summary(psu)
+#También a modo exploratorio podríamos usar este paquete de trabajo
+skim_with(numeric = list(missing=NULL, complete=NULL),factor = list(missing=NULL, complete=NULL), integer = list(missing=NULL, complete=NULL))
+skim(psu) %>% pander()
+#Podríamos también revisar los histogramas
+hist(psu$x_nem, 
+     main="Figura 1 Histograma Notas de enseñanza media",
+     ylab = "Frecuencia",
+     xlab="Promedio NEM",
+     border="black",
+     col = "gray",
+     xlim=c(40,70), 
+     ylim=c(0,2000),
+     las=1,
+     breaks=20)
+
+hist(psu$mate, 
+     main="Figura 2 Histograma PSU Matemáticas",
+     ylab = "Frecuencia",
+     xlab="Puntaje PSU",
+     border="black",
+     col = "gray",
+     xlim=c(100,850), 
+     ylim=c(0,2000),
+     las=1,
+     breaks=20)
+```
+
+---
+
+**3. A partir de la hipótesis principal, se propone que el puntaje obtenido en la PSU de Lenguaje es una tercera variable que afecta a la variable independiente. Utilice el método de residualización para controlar la relación por esta nueva variable. ¿Por qué sería mejor este método que controlar por un procedimiento de estratificación?** 
+
++ Método de residualización:
+
+1. Estimar un modelo en que la variable independiente del modelo original pasa a ser la variable dependiente y el puntaje en la PSU de lenguaje es nuestra variable independiente.
+2. Obtenemos los residuos de la primera regresión
+3. Estimamos una segunda regresión con nuestra variable dependiente de interés asociada a los residuos de la regresión anterior.
+4. Interpretamos.
+
+```{r, echo=TRUE, eval=TRUE}
+#PASO 1: Notar cuál es la VD y la VI
+m1 <- lm(x_nem~leng, data=psu)
+summary(m1)
+#PASO 2: Extraemos los residuos de la regresión
+psu$residuo_nem <- residuals(m1)
+#PASO 3: regresión entre la variable dependiente y los residuos
+m2 <- lm(mate~residuo_nem, data=psu)
+summary(m2)
+```
+
++ Problemas del procedimiento de **estratificación**:
+
+  - No aplicable para variables continuas, ya que tienen muchos valores y por ende muchos subgrupos. 
+  - Incrementar el número de subgrupos implica menos observaciones por grupo
+  - Problemas a la hora de hacer pruebas de hipótesis
+  - No limpia la correlación entre las variables independientes
+
+---
+
+**4. Interprete el coeficiente de regresión y el $R^2$ no ajustado y compárelos con la estimación de la regresión original. ¿Qué problema podría tener el procedimiento de residualización?**
+
+```{r, echo=TRUE, eval=TRUE}
+#Estimamos nuestro modelo 0
+m0 <- lm(mate~x_nem, data=psu)
+m2 <- lm(mate~residuo_nem, data=psu)
+
+#Comparemos los modelos
+stargazer(m0,m2, title = "Comparación de modelos",column.labels=c("Original","Residualización"), type ='text')
+```
+
++ Problemas del método de **residualización**:
+
+  - Poco práctico cuando se utilizan más de dos variables independientes en el modelo. La solución a este problema es la aplicación del método de minimización mediante un modelo de regresión múltiple (aplicación de algebra de matrices). 
+
+---
+
+**5. Realice un modelo de regresión múltiple del ejercicio anterior, luego proponga un modelo teórico incorporando la educación del padre y estímelo**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Método de minimización (regresión múltiple)
+m3 <- lm(mate~x_nem+leng, data=psu)
+stargazer(m2,m3, title = "Comparación de modelos",column.labels=c("Residualización", "Regresión Múltiple"), type ='text')
+```
+
++ Modelo de regresión múltiple (incorporando educación del padre)
+
+$$PSUMate_{} = \beta_{0} + \beta_{1}nem_{} + \beta_{2}leng_{} + \beta_{3}educpadre_{} + \mu$$
+
+```{r, echo=TRUE, eval=TRUE}
+m4 <- lm(mate~x_nem+leng+educpadre, data=psu)
+summary(m4)
+```
+
+---
+
+**6. Interprete los coeficientes de regresión y $R^2$ ajustado y no ajustado asociados al modelo anterior.**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Generamos una tabla con el modelo estimado
+stargazer(m4, title = "Modelo Regresión Múltiple",column.labels=c("Modelo 1"), type ='text')
+```
+
+---
+
+**7. Otros investigadores indican que el modelo mejoraría aún más si se agregara a la educación del padre, la educación de la madre y el género de los estudiantes. ¿Cómo podríamos evaluar esto? ¿Por qué sería necesario incluir múltiples variables independientes?**
+
+**Pista**: Estime regresiones múltiples con la variable dependiente, la variable independiente original y las nuevas variables independientes (cada una por separado y una regresión con todas las variables)
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE, results = "asis"}
+#Borramos los modelos generados en el apartado anterior
+rm(list=(ls()[!ls() %in% ("psu")]))
+#1. Modelo original 
+m1 <- lm(mate~x_nem, data=psu)
+#2. Modelo original + educación del padre 
+m2 <- lm(mate~x_nem+educpadre, data=psu)
+#3. Modelo original + educación de la madre
+m3 <- lm(mate~x_nem+educmadre, data=psu)
+
+#4. MODELO FINAL: Modelo original + educación del padre +
+# educación de la madre 
+m4 <- lm(mate~x_nem+educpadre+educmadre, data=psu)
+
+#Tabla de calidad para presentar regresiones múltiples
+stargazer(m1,m2,m3,m4, title = "Comparación de modelos",
+           covariate.labels=c("NEM", "Educación Padre", "Educación Madre"),
+          column.labels=c("Modelo","Modelo","Modelo","Modelo","Modelo"), type ='html', font.size = "small", align = TRUE, omit.stat=c("f", "ser"), column.sep.width = "-15pt")
+
+```
+
++ Podemos evaluar el ajuste del modelo ($R^2$ ajustado) para evaluar la inclusión de variables independientes (recordar el principio de parsimonia).
++ Inclusión de variables independientes: 
+  - Mejorar la explicación de la variable dependiente (estadísticos de bondad de ajuste)
+  - Estimar efectos causales y realizar predicciones
+  - Profundizar en relaciones bivariadas: mediadores y moderadores
+
+---
+
+**8. ¿Cuáles son los problemas de los coeficientes tal como están? ¿Cómo se podría solucionar?**
+
++ No es posible la comparación de coeficientes para distintas variables independientes que forman un mismo modelo de regresión múltiple.
++ Solución: 
+  - Estandarizar los coeficientes ($\beta 's$ full estandarizados) 
+  - Recodificar las variables a puntaje Z: $z_{x}=\dfrac{x-\overline{x}}{\sigma_{x}}$ (media 0 y desviación estándar 1)
+
+---
+
+**9. ¿Qué problema tienen los coeficientes estandarizados?**
+
++ Comparar coeficientes estandarizados para un mismo modelo con muestras distintas genera problemas, debido a que los coeficientes estandarizados son sensible a la varianza de los datos.
++ Problemas de interpretación de las asociaciones entre variables.
+
+---
+
+# **Referencias**
+
+## Libro base control estadístico
+
+[Moore, David S. (2000). Estadística aplicada básica. Segunda edición. Barcelona: Antoni Bosh](https://www.dropbox.com/sh/t0s4r6yuzgcwt10/AAB9DxspiUmAqihGAITmhQpca?dl=0&preview=Moore+2000.pdf)
+
++ Caps 2.3, 2.4 & 2.5 
+
+![](moore.png)
+
+## Libro base regresión
+
+[Wooldridge, Jeffrey M. (2009). Introducción a la econometría: un enfoque moderno. 4a edición. Mé́xico: Cengage Learning.](https://www.dropbox.com/sh/t0s4r6yuzgcwt10/AAB9DxspiUmAqihGAITmhQpca?dl=0&preview=Wooldridge+2010.pdf)
+
++ Caps 3.1 - 3.3 para regresión múltiple
+
+![](wold.jpeg)
+
+## Libro base del curso para el uso R
+
+[Fox, John y Sanford Weisberg (2019). An R Companion to Applied Regression. Third Edition. SAGE.](https://www.dropbox.com/sh/t0s4r6yuzgcwt10/AAB9DxspiUmAqihGAITmhQpca?dl=0&preview=Fox19.pdf)
+
++ Caps 1 y 2.
+
+![](fox.jpeg)
+
+
+## Ayudantías
+
+Puedes encontrar las carpetas con las ayudantías en pdf y bases de datos en el siguiente [Link](https://github.com/JDConejeros/SOL201S_Datos_3)  
+
+La próxima ayudantía veremos: 
+
++ Modelo de regresión múltiple
++ Repaso prueba 1
+
+---
+
+
