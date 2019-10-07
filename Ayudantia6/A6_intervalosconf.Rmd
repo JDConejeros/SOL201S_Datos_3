@@ -1,0 +1,389 @@
+---
+title: 'Ayudantía VI: Intervalos de confianza y restricciones múltiples'
+author:
+- affiliation: Profesor Instituto de Sociología PUC
+  email: lmaldona@uc.cl
+  name: Luis Maldonado
+- affiliation: Estudiante Magíster en Sociología PUC
+  email: cirufs@uc.cl
+  name: Catalina Rufs
+- affiliation: Estudiante Magíster en Sociología PUC
+  email: jdconejeros@uc.cl
+  name: José Daniel Conejeros
+date: '`r format(Sys.time(), "%d/%m/%Y")`'
+output:
+  html_document:
+    code_folding: show
+    highlight: tango
+    theme: cosmo
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+subtitle: SOL201S - Análisis Datos III
+---
+<style type="text/css">
+h1.title {
+  font-size: 38px;
+  color: Dark;
+  font-weight:bold;
+}
+</style>
+ 
+---
+
+# **Objetivos**
+
++ Evaluar modelos de regresión múltiple
++ Introducir comandos de presentación de modelos en `R`
++ Evaluar la significancia estadística de los coeficientes del modelo de regresión
+
+---
+
+# **Contexto del ejercicio**
+
+Un grupo de investigadores está interesado en analizar la relación entre los años de educación alcanzado y otras covariables sobre el ingreso percibido por la población ocupada mayor de 18 años en Chile. A continuación se presentan las variables utilizadas por los investigadores para evaluar distintas hipótesis:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+rm(list = ls()) #Limpiamos la memoria
+library(dplyr)
+library(kableExtra)
+
+variable <- c( "`ytrabajocor`", "`esc`", "`o10`", "`edad`", "`numper`", "`sexo`")
+definicion <- c("Ingreso declarado del trabajo en pesos chilenos",
+                "Años de escolaridad del entrevistado/a",
+                "Horas trabajadas a la semana por el entrevistado",
+                "Edad en años",
+                "Número de personas que viven en el hogar", 
+                "Genero declarado por el entrevistado/a")
+tabla <- as.data.frame(cbind(variable, definicion))
+colnames(tabla) <- c("Variable", "Definición")
+
+#Tabla
+kable(tabla, format="html", booktabs =TRUE, linesep = "", row.names = FALSE,
+      align = c("lc"), 
+      caption = "Tabla 1: Definición operacional de las variables del estudio")  %>%
+  kable_styling(latex_options =c("hold_position"))
+```
+
+---
+
+# **Hipótesis y Datos**
+
+A partir de la revisión de los investigadores se han formulado las siguientes hipótesis de investigación:
+
++ El nivel de escolaridad estará asociado de forma positiva con el ingreso declarado por la población ocupada en Chile. 
++ A medida que aumenta la edad, disminuirá el ingreso declarado por las personas ocupadas en Chile. 
++ A mayor número de horas trabajadas, mayor será el ingreso declarado por las personas ocupadas en Chile. 
++ A mayor cantidad de personas en el hogar se espera que disminuya el ingreso. 
+
+Para corroborar estas hipótesis se utilizaron los datos proporcionados por la encuesta de caracterización socioeconómica (CASEN) realizada el año 2017. La muestra corresponde a $89492$ observaciones que representan a la población ocupada mayor de 18 años en Chile. Para el análisis se utilizaron modelos de regresión múltiple con las funciones base de `R` y las librerías `dplyr`, `car`, `readstata13`, `stargazer` y `skimr` 
+
+Aplicamos las siguientes configuraciones inciales: 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+##Configuraciones iniciales
+rm(list = ls()) #Limpiamos la memoria
+#Instalamos liberías de trabajo:
+#install.packages("dplyr")#Para manipulación de datos
+#install.packages("car")#Funciones para estimar regresiones
+#install.packages("readstata13") #lectura/importar de bases de datos en stata
+#install.packages("stargazer") #Paquete que nos permite visualizar regresiones
+#install.packages("skimr") #Paquete de exploración de datos
+#install.packages("texreg") #visualizar regresiones
+
+##Cargar librerías:
+library(dplyr)
+library(car)          
+library(readstata13)  
+library(stargazer)  
+library(skimr)      
+
+options(scipen=999) #Desactivamos la notación científica
+```
+
+---
+
+# **Ejercicio**
+
+**1. Seleccione las variables con las cuales va a trabajar, realice los ajustes que considere necesarios y observe los valores posibles en las variables de interés. **
+
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Abrimos nuestra base de datos 
+casen <- read.dta13("extracto_casen_2017.dta", convert.factors = TRUE)
+#Exploramos nuestra base de datos 
+#str(casen)
+head(casen)
+#skim(casen)
+#Seleccionamos las variables que nos interensan para las hipótesis de investigación
+casen2 <- subset(casen, select = c(ytrabajocor, esc, edad, o10, numper))
+#Revisamos
+head(casen2)
+skim_with(numeric = list(missing=NULL, complete=NULL),factor = list(missing=NULL, complete=NULL), integer = list(missing=NULL, complete=NULL))
+#Salario (Variable dependiente)
+skim(casen2[1]) %>% pander()
+#Variables Independientes 
+skim(casen2[2:5]) %>% pander()
+```
+
+---
+
+**2. Estime una matriz de correlación entre las variables de interés. ¿Qué se observa entre las variables independientes? ¿Qué puede decirse preliminarmente respecto a nuestras hipótesis?**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+cor <- cor(casen2)
+cor <- round(cor,2)
+#Cambiamos los nombres
+colnames(cor) <- c("Ingreso", "Escolaridad", "Edad", "Horas", "N del hogar")
+rownames(cor) <- c("Ingreso", "Escolaridad", "Edad", "Horas", "N del hogar")
+cor[upper.tri(cor)] <- ""
+#Tabla de correlaciones
+cor %>% pander()
+
+#Significancia de las correlaciones
+#cor.test(casen2$ytrabajocor, casen2$esc)$p.value 
+#cor.test(casen2$ytrabajocor, casen2$edad)$p.value 
+#cor.test(casen2$ytrabajocor, casen2$o10)$p.value 
+#cor.test(casen2$ytrabajocor, casen2$numper)$p.value 
+```
+
+En primer lugar se observan bajas correlaciones entre las variables independientes propuestas por los investigadores, lo que sería un indicador de que miden aspectos distintos descartando la posibilidad de construir un indicador entre ellas. Respecto a las hipótesis propuestas se puede decir lo siguiente: 
+
++ El nivel de escolaridad estará asociado de forma positiva con el ingreso declarado por la población ocupada en Chile. `r text_spec("Se observa una asociación positiva", color = "blue")`.
+
++ A medida que aumenta la edad, disminuirá el ingreso declarado por las personas ocupadas en Chile, y viceversa. `r text_spec("Se observa una débil asociación positiva (aunque muy cercana a 0)", color = "blue")`.
+
++ A mayor número de horas trabajadas, mayor será el ingreso declarado por las personas ocupadas en Chile, y vicerversa. `r text_spec("Se observa una débil asociación positiva (aunque muy cercana a 0)", color = "blue")`.
+
++ A mayor cantidad de personas en el hogar se espera que disminuya el ingreso, y viceversa. `r text_spec("Se observa una débil asociación negativa (aunque muy cercana a 0)", color = "red")`.
+
+---
+
+**3. Estime un modelo de regresión simple prediciendo el ingreso declarado a partir de los años de escolaridad de los entrevistados. Luego, incorpore una a una las variables independientes restantes. ¿Qué se puede concluir para las hipótesis?**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE, results = "asis"}
+#Despejamos el environment
+rm(cor)
+#Logaritmo del ingreso 
+#casen2$ingreso <- scale(casen$ytrabajocor)
+
+#1. Modelo para Ingreso y años de escolaridad
+m1 <- lm(ytrabajocor~esc, data=casen2)
+#2. Modelo para Ingreso y años de escolaridad más edad
+m2 <- lm(ytrabajocor~esc + edad, data=casen2)
+#3. Modelo para Ingreso y años de escolaridad más edad y horas trabajadas
+m3 <- lm(ytrabajocor~esc + edad + o10, data=casen2)
+#4. Modelo para Ingreso y años de escolaridad más edad, horas trabajadas y personas en el hogar
+m4 <- lm(ytrabajocor~esc + edad + o10 + numper, data=casen2)
+
+#Tabla de calidad para presentar nuestras regresiones
+stargazer(m1,m2,m3,m4, title = "Modelos de regresión para ingreso",
+           covariate.labels=c("Años escolaridad", "Edad", "Horas trabajadas", "N del hogar"),
+          column.labels=c("Modelo","Modelo","Modelo","Modelo","Modelo"), type ='html',
+           dep.var.caption  = "Variable Dependiente",
+          dep.var.labels   = "Ingreso declarado",
+          font.size = "small", align = TRUE, omit.stat=c("f", "ser"), column.sep.width = "30pt")
+```
+
+\
+
++ El nivel de escolaridad estará asociado de forma positiva con el ingreso declarado por la población ocupada en Chile.
+
+`r text_spec("Se observa una asociación positiva en todos los modelos de regresión. El valor del coeficiente -años de escolaridad- es robusto a la incorporación de otras variables explicativas", color = "blue")`.
+
++ A medida que aumenta la edad, disminuirá el ingreso declarado por las personas ocupadas en Chile.  
+
+`r text_spec("En base a estos datos se obtiene una asociación positiva para los modelos 2, 3 y 4. Aunque los retornos monetarios son menores en comparación a los años de escolaridad.", color = "blue")`.
+
++ A mayor número de horas trabajadas, mayor será el ingreso declarado por las personas ocupadas en Chile.  
+
+`r text_spec("Se observa una asociación positiva para los modelos 3 y 4", color = "blue")`.
+
++ A mayor cantidad de personas en el hogar se espera que disminuya el ingreso. 
+
+`r text_spec("Se evidencia una asociación negativa para el modelo 4 (aunque muy cercana a 0)", color = "red")`.
+
+**Todas las observaciones son significativas a un 99% de nivel de confianza**
+
+---
+
+**4. Formule un modelo de regresión múltiple teórico para el modelo 4 de la pregunta anterior. Grafique e interprete los coeficientes de dicha regresión. ¿Son estadísticamente significativos? ¿Qué se puede decir respecto a cada hipótesis?** 
+
++ Modelo teórico:
+
+<br/>
+
+<center>
+<div style="background-color:lavender">
+$$Ingreso_{} = \beta_{0} + \beta_{1}escolaridad_{} + \beta_{2}edad_{} + \beta_{3}horas_{} + \beta_{4}nhogar_{} + \mu$$ 
+</div>
+</center>
+
+<br/>
+
+```{r eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+#Graficamos nuestras estimaciones
+#install.packages("sjPlot") #Para graficar nuestros coeficientes
+library(sjPlot)
+plot_model(m4, sort.est=TRUE, show.values=TRUE, vline.color="black", title = "Figura 1: Modelo 4 para ingreso declarado (Coeficientes NO estandarizados)", axis.labels = c("N hogar", "Horas de trabajo", "Edad", "Años escolaridad"),  dot.size = 1, width=0.1, axis.title = "Coeficiente")
+
+#Coeficientes estandarizados
+plot_model(m4, sort.est=TRUE, show.values=TRUE, vline.color="black", title = "Figura 2: Modelo 4 para ingreso declarado (Coeficientes estandarizados)", axis.labels = c("N hogar", "Horas de trabajo", "Edad", "Años escolaridad"), dot.size = 1, type="std",width=0.1, axis.title = "Coeficiente")
+
+```
+
+\
+
++ En la Figura 2 se observa que los coeficientes de regresión en el Modelo 4 para las cuatro variables independientes son estadísticamente significativos al 99% nivel de confianza. 
+
++ En particular se tiene que ante el aumento de una desviación estándar en la escolaridad del individuo, se espera un aumento de a 0,37 desviaciones estándar en el ingreso controlando por las demás variables. Esto es acorde con la hipótesis que se tenía.
+
++ Luego, ante el aumento de una desviación estándar en la edad de la persona, se espera un aumento de 0,14 desviaciones estándar en el ingreso, ceteris paribus. Esto es contrario a la hipótesis planteada por el/la investigadora. ¿Qué podría estar ocurriendo en particular con esta variable?
+
++ En tercer lugar, ante el aumento de una desviación estándar en las horas trabajadas por la persona, se espera un aumento de 0,1 desviación estándar del ingreso percibido, controlando por las demás variables. Este resultado apoya la tercera hipótesis del estudio. 
+
++ Finalmente, ante el aumento de una desviación estándar en el número de personas en el hogar donde vive, se espera una disminución de 0,02 desviaciones estándar en el ingreso de la persona, ceteris paribus. Esto nuevamente se condice con la hipótesis cuatro del estudio. 
+
++ Al ser coeficientes estandarizados, entonces podemos hacer una comparación de la magnitud de impacto sobre la variable dependiente. Se observa que los años de escolaridad de la persona es la variable que más peso tiene en la varianza del ingreso. 
+
+---
+
+**5. En base al modelo 4 estime el intervalo de confianza para el coeficiente de años de escolaridad a un 90%, 95% y 99% de nivel de confianza. ¿Qué puede observar según la hipótesis de investigación?**
+
+$$\beta_{1}escolaridad_{} = 77782.07$$
+$$SE(\beta_{1}escolaridad_{}) = 696.75$$ 
+
++ Estimación intervalo: $$\beta_{1}escolaridad_{} \pm z*SE(\beta_{1}escolaridad_{}) $$
+
++ Valores de z/t: 
+    + 90% de nivel de confianza: **1.645**
+    + 95% de nivel de confianza: **1.960**
+    + 99% de nivel de confianza: **2.576**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Limpiamos el enviroment
+rm(m1,m2,m3)
+
+#Extraemos los elementos del modelo 4
+#Coeficiente de años de escolaridad
+beta1 <- m4[["coefficients"]][["esc"]]
+beta1
+#Error estándar
+se <- sqrt(diag(vcov(m4)))
+se <- se[2]
+se
+```
+
++ **Estimación del intervalo a un 90% de nivel de confianza**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+beta1 - 1.645*se #IC Izquierdo
+beta1 + 1.645*se #IC Derecho
+```
+
+
++ **Estimación del intervalo a un 95% de nivel de confianza**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+beta1 - 1.960*se #IC Izquierdo
+beta1 + 1.960*se #IC Derecho
+```
+
++ **Estimación del intervalo a un 99% de nivel de confianza**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+beta1 - 2.576*se #IC Izquierdo
+beta1 + 2.576*se #IC Derecho
+```
+
++ En base a estos tres intervalos de confianza, se puede decir que la variable escolaridad es significativa hasta el 99% nivel de confianza. Esto quiere decir que si obtuviésemos muestras aleatorias infinitas, sobre un 99% de estas nos permitirían encontrar un impacto positivo (no se incluye el cero) de similar magnitud a la que se encontró de educación sobre ingreso, lo cual es evidencia importante a favor de la primera hipótesis del estudio. 
+
+---
+
+**6. Los modelos estimados no incluyen la variable género. ¿Qué consecuencias puede tener esto para las estimaciones? Estime un modelo completo incluyendo dicha variable**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE, results = "asis"}
+#Despejamos el environment
+rm(beta1,se,m4,casen2)
+#Objeto con las variables incluídas el género
+casen2 <- subset(casen, select = c(ytrabajocor, esc, edad, o10, numper, sexo))
+#Codificamos el sexo como factor
+casen2$genero[casen2$sexo==1] <- 0
+casen2$genero[casen2$sexo==2] <- 1
+casen2$genero <-factor(casen2$genero, levels = c(0,1), labels = c("Hombre", "Mujer"))
+#Estimamos la regresión 
+m1 <- lm(ytrabajocor~esc + edad + o10 + numper+sexo, data=casen2)
+
+#Tabla de calidad para presentar nuestras regresiones
+stargazer(m1, title = "Modelos de regresión para ingreso",
+           covariate.labels=c("Años escolaridad", "Edad", "Horas trabajadas", "N del hogar", "Mujer"),
+          column.labels=c("Modelo"), type ='html',dep.var.caption  = "Variable Dependiente",dep.var.labels   = "Ingreso declarado",
+          font.size = "small", align = TRUE, omit.stat=c("f", "ser"), column.sep.width = "30pt")
+```
+
+\
+
++ No incluir la variable género, a sabiendas teóricamente de que es una variable importante al predecir el ingreso de una persona en el mundo laboral, sesga los resultados del modelo al no cumplirse el supuesto de media condicional cero. Esto, ya que una variable no observada en el error, estaría relacionada con nuestra variable dependiente, así como también se esperaría que estuviese relacionada con los años de educación por ejemplo. 
+
++ Para solucionar este sesgo la solución es incluirlo como variable de control. En la Tabla se observa que al hacerlo, como se esperaba, se obtiene un coeficiente de regresión negativo y significativo al 99% nivel de confianza. En detalle, se tiene que las mujeres perciben en promedio 175.493 pesos menos que los hombres, controlando por las demás variables del modelo. Además, podemos ver un aumento en la capacidad predictiva del modelo al aumentar el R cuadrado ajustado en un punto porcentual. Las demás variables no sufren modificaciones importantes en sus magnitudes ni significancias, lo que es indicio de que aún cuando faltaba género, estas tenían un impacto importante por si solas en nuestra variable dependiente. 
+
+---
+
+**7. Formule una restricción lineal que permita identificar si las variable años de escolaridad tiene una asociación con el ingreso declarado.**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Estimamos la regresión
+m4 <- lm(ytrabajocor~esc + edad + o10 + numper, data=casen2)
+
+#Para formular restricciones lineales
+car::linearHypothesis(m4, c("esc=0"))
+```
+
+---
+
+**8. Mediante restricciones lineales, pruebe si la edad y el número de personas del hogar estan asociadas significativamente con el ingreso declarado**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Para formular restricciones lineales
+car::linearHypothesis(m4, c("edad=0", "numper=0"))
+```
+
++ **¿Están asociadas significativamente? ¿Por qué?**
+
+--- 
+
+# **Referencias**
+
+## Libro base control estadístico
+
+[Moore, David S. (2000). Estadística aplicada básica. Segunda edición. Barcelona: Antoni Bosh](https://www.dropbox.com/sh/t0s4r6yuzgcwt10/AAB9DxspiUmAqihGAITmhQpca?dl=0&preview=Moore+2000.pdf)
+
++ Caps 4.1 - 4.4, 6.1-6.5 y 7.3
+
+![](moore.png)
+
+## Libro base regresión
+
+[Wooldridge, Jeffrey M. (2009). Introducción a la econometría: un enfoque moderno. 4a edición. Mé́xico: Cengage Learning.](https://www.dropbox.com/sh/t0s4r6yuzgcwt10/AAB9DxspiUmAqihGAITmhQpca?dl=0&preview=Wooldridge+2010.pdf)
+
++ Caps 2.1 - 2.4, 2.6, 3.1 - 3.3 & 6.3
+
+![](wold.jpeg)
+
+## Libro base del curso para el uso R
+
+[Fox, John y Sanford Weisberg (2019). An R Companion to Applied Regression. Third Edition. SAGE.](https://www.dropbox.com/sh/t0s4r6yuzgcwt10/AAB9DxspiUmAqihGAITmhQpca?dl=0&preview=Fox19.pdf)
+
++ Caps 1 y 2.
+
+![](fox.jpeg)
+
+
+## Ayudantías
+
+Puedes encontrar las carpetas con las ayudantías en pdf y bases de datos en el siguiente [Link](https://github.com/JDConejeros/SOL201S_Datos_3)  
+
+---
+
+

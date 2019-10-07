@@ -9,3 +9,4 @@ Estas guías son una introducción en el uso de R y el uso de modelos de regresi
 + **Ayudantía 3**: Introducción a regresión simple en R. 
 + **Ayudantía 4**: Idea de control estadístico y modelo de regresión múltiple en R. 
 + **Ayudantía 5**: Modelo de regresión múltiple en R. 
++ **Ayudantía 6**: Intervalos de confianza y restricciones múltiples.
