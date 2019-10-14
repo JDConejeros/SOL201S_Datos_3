@@ -1,0 +1,529 @@
+---
+title: 'Ayudantía VII: Preparación ejercicio 2. Regresión Múltiple'
+author:
+- affiliation: Profesor Instituto de Sociología PUC
+  email: lmaldona@uc.cl
+  name: Luis Maldonado
+- affiliation: Estudiante Magíster en Sociología PUC
+  email: cirufs@uc.cl
+  name: Catalina Rufs
+- affiliation: Estudiante Magíster en Sociología PUC
+  email: jdconejeros@uc.cl
+  name: José Daniel Conejeros
+date: '`r format(Sys.time(), "%d/%m/%Y")`'
+output:
+  html_document:
+    code_folding: show
+    highlight: tango
+    theme: cosmo
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+subtitle: SOL201S - Análisis Datos III
+---
+<style type="text/css">
+h1.title {
+  font-size: 38px;
+  color: Dark;
+  font-weight:bold;
+}
+</style>
+ 
+---
+
+# **Objetivos**
+
++ Revisar los contenidos de regresión lineal múltiple e inferencia estadística 
++ Revisar las especificaciones de la función `lm` en `R`
++ Preparar contenidos para la realización del ejercicio 2
+
+---
+
+# **Contexto del ejercicio**
+
+El artículo  **“Income, Egalitarianism, and Attitudes Towards Healthcare Policy: A Study on Policy Attitudes in 29 Countries”** (Azar, Maldonado, Castillo & Atria, 2018) tiene por objetivo evaluar la relación entre el ingreso, valores igualitaristas, y actitudes hacia la política en salud. Para esto se evalúa el siguiente modelo teórico: 
+
+<br/>
+
+<center>
+<div style="background-color:lavender">
+$$Public\ funding{} = \beta_{0} + \beta_{1}igualitarismo_{} + \beta_{2}ingreso_{} + \beta_{3}edad_{} + \beta_{4}educación_{} + \mu$$ 
+</div>
+</center>
+
+<br/>
+
+La operacionalización de las variables: 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+rm(list = ls()) #Limpiamos la memoria
+library(dplyr)
+library(kableExtra)
+
+variable <- c( "Fondos públicos", "Igualitarismo", "Ingresos", "Edad", "Educación", "País")
+variable_base <- c( "`V16, V17, V18, V19`", "`V9`", "`income_dc`", "`AGE`", "`DEGREE`", "`V4`")
+definicion <- c("Escala Likert de `fuertemente a favor` a `fuertemente en contra`. 
+                ¿Está a favor o en contra de la financiación pública de:
+                
+    1. Controles médicos preventivos, 
+    2. Tratamiento del VIH, 
+    3. Programas para prevenir la obesidad y 
+    4. Transplante de organos" , 
+    
+                "Escala de igualitarismo (1 a 5)",
+                "Deciles de ingreso (1 a 10)",
+                "Edad en años (15 a 102 años)",
+                "Niveles de educación (0 a 6)",
+                "País de la muestra")
+tabla <- as.data.frame(cbind(variable, variable_base, definicion))
+colnames(tabla) <- c("Variable","Nombre BBDD", "Definición")
+
+#Tabla
+kable(tabla, format="html", booktabs =TRUE, linesep = "", row.names = FALSE,
+      align = c("ccl"), 
+      caption = "Tabla 1: Definición operacional de las variables del estudio")  %>%
+  kable_styling(latex_options =c("hold_position"))
+```
+
+A partir de lo mencionado sobre el artículo, la descripción de variables y la base de datos `Ejercicio2_2018.dta`, realice  los siguientes ejercicios: 
+
+---
+
+# **Configuraciones iniciales**
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+##Configuraciones iniciales
+rm(list = ls()) #Limpiamos la memoria
+#Instalamos liberías de trabajo:
+#install.packages("dplyr")#Para manipulación de datos
+#install.packages("car")#Funciones para estimar regresiones
+#install.packages("readstata13") #lectura/importar de bases de datos en stata
+#install.packages("stargazer") #Paquete que nos permite visualizar regresiones
+#install.packages("skimr") #Paquete de exploración de datos
+#install.packages("texreg") #visualizar regresiones
+
+##Cargar librerías:
+library(dplyr)
+library(car)          
+library(haven)
+library(stargazer)  
+library(skimr)      
+
+options(scipen=999) #Desactivamos la notación científica
+```
+
+---
+
+# **Ejercicio**
+
+**1. Realice las siguientes tareas de procesamiento con la base de datos:**
+    
+    **a. Renombre las variables independientes.**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Abrimos nuestra base de datos (dejamos en formato data.frame)
+base <- as.data.frame(read_dta("Ejercicio2_2018.dta"))
+#Exploramos nuestra base de datos 
+#str(base)
+head(base)
+#Renombramos las variables independientes
+names(base)[names(base) == "V9"] <- "igualitarismo"
+names(base)[names(base) == "income_dc"] <- "ingreso"
+names(base)[names(base) == "AGE"] <- "edad"
+names(base)[names(base) == "DEGREE"] <- "educacion"
+names(base)[names(base) == "V4"] <- "pais"
+head(base)
+```
+
+    **b. Invertir los atributos de los indicadores de la variable dependiente y codificar casos pérdidos.**
+    
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Observamos los indicadores de la variable dependiente
+table(base$V16)
+table(base$V17)
+table(base$V17)
+table(base$V18)
+
+#Recodificamos las categorías como missing: 
+#8=NS-NR & 9=Sin datos
+base$V16[base$V16 == 8 | base$V16 == 9] <- NA
+base$V17[base$V17 == 8 | base$V17 == 9] <- NA
+base$V18[base$V18 == 8 | base$V18 == 9] <- NA
+base$V19[base$V19 == 8 | base$V19 == 9] <- NA
+
+#Corroboramos los missing
+skim(base, 3:6)  %>% pander() # Codificaciones OK. 
+
+#Invertimos las escalas: fuertemente en contra a fuertemente a favor
+base$v16 <- 6 - base$V16
+base$v17 <- 6 - base$V17
+base$v18 <- 6 - base$V18
+base$v19 <- 6 - base$V19
+
+#Corroboramos
+#table(base$V16, base$v16)  %>% pander()
+#table(base$V17, base$v17)  %>% pander()
+#table(base$V18, base$v18)  %>% pander()
+#table(base$V19, base$v19)  %>% pander()
+```
+    
+
+    **c. Construir un indicador sumativo de la variable dependiente.**
+    
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Construímos nuestro indicador sumativo: escala de apoyo al gasto público en salud
+#Para que la escala parto desde el valor 1
+base$fondos_public <- (base$v16 + base$v17 + base$v18 + base$v19) - 3 
+#Codificamos como variable numérica
+base$fondos_public <- as.numeric(base$fondos_public)
+#Miramos nuestro indicador final
+skim_with(numeric = list(missing=NULL, complete=NULL),factor = list(missing=NULL, complete=NULL), integer = list(missing=NULL, complete=NULL))
+skim(base$fondos_public)  %>% pander()
+```    
+
+    **b. Limpie la base de datos: considere solo las variables a utilizar y elimine los casos pérdidos.**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Seleccionamos las variables del estudio
+base <- subset(base, select = c(pais, fondos_public, igualitarismo, ingreso, edad, educacion))
+#head(base)
+#Codificamos missing de las otras variables 
+#table(base$igualitarismo) #Escala de 1 al 5, missing: 8 y 9
+#table(base$ingreso) #Escala de 1 a 10
+#table(base$edad) #Missing 999
+#table(base$educacion) #Missing 9
+base$edad[base$igualitarismo == 8 | base$igualitarismo == 9] <- NA
+base$edad[base$edad == 999] <- NA
+base$educacion[base$educacion == 9] <- NA
+#Convertimos todas nuestras variables en numéricas
+base$edad <- as.numeric(base$edad)
+base$educacion <- as.numeric(base$educacion)
+base$igualitarismo <- as.numeric(base$igualitarismo)
+#Eliminamos los missing
+base <- na.omit(base)
+#Revisamos la base completa
+skim(base)  %>% pander()
+```
+
+---
+
+**2. Estime el modelo de regresión OLS propuesto para las siguientes muestras y reporte sus resultados en un tabla de calidad** 
+
++ **¿Qué argumentos me permite la función lm?**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+help(lm)
+```
+
+    **a.** Todos los países de la base de datos 
+    
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Modelo para todos los países
+m1 <- lm(fondos_public~igualitarismo + ingreso + edad + educacion, data=base)
+```
+  
+    **b.** Muestra para Chile (código: 152)
+    
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Modelo para Chile (152)
+m2 <- lm(fondos_public~igualitarismo + ingreso + edad + educacion, data=base, subset=(pais==152))
+```
+
+    **c.** Muestra para Suecia (código: 752)
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Modelo para Suecia (752)
+m3 <- lm(fondos_public~igualitarismo + ingreso + edad + educacion, data=base, subset=(pais==752))
+```
+
+    **d.** Muestra para USA (código: 840)
+    
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Modelo para USA (840)
+m4 <- lm(fondos_public~igualitarismo + ingreso + edad + educacion, data=base, subset=(pais==840))
+```
+
++ **Tabla de calidad con todos los modelos**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE, results = "asis"}
+stargazer(m1,m2,m3,m4, title = "Modelos de regresión para apoyo al gasto público en salud",
+          covariate.labels=c("Igualitarismo", "Ingreso", "Edad", "Nivel educacional", "Intercepto"),
+          column.labels=c("Todos los paises","Chile","Suecia","USA"), type ='html',
+           dep.var.caption  = "Variable Dependiente",
+          dep.var.labels   = "Escala de apoyo",
+          font.size = "small", align = TRUE, omit.stat=c("f", "ser"), column.sep.width = "30pt")
+```
+
+\
+
++ **Gráfico para las distintas muestras**
+
+```{r eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+#Gráfico 
+#install.packages("sjPlot")
+library(sjPlot)
+all <- plot_model(m1, sort.est=F, show.values=TRUE, vline.color="black", title = "Apoyo de gasto en salud (Todos)",  dot.size = 1, width=0.1, axis.title = "Coeficiente")
+
+chile <- plot_model(m2, sort.est=F, show.values=TRUE, vline.color="black", title = "Apoyo de gasto en salud (Chile)",  dot.size = 1, width=0.1, axis.title = "Coeficiente")
+
+suecia <- plot_model(m3, sort.est=F, show.values=TRUE, vline.color="black", title = "Apoyo de gasto en salud (Suecia)",  dot.size = 1, width=0.1, axis.title = "Coeficiente")
+
+usa <- plot_model(m4, sort.est=F, show.values=TRUE, vline.color="black", title = "Apoyo de gasto en salud (USA)",  dot.size = 1, width=0.1, axis.title = "Coeficiente")
+
+#Revisamos los gráficos
+#install.packages("egg")
+library(egg)
+ggarrange(all, chile, suecia, usa, ncol = 2, nrow = 2)
+```
+
+---
+
+**3. Interprete los coeficientes y sus significaciones estadísticas de ingreso para cada uno de los 4 modelos estimados. En base a sus estimaciones, señale el país en donde el ingreso tiene el efecto más grande**
+
++ *Modelo 1*: Para **todos los países del estudio** se observa que ante el aumento en un decil de ingreso, el apoyo al gasto público en salud disminuye en 0.016 puntos dejando constante la escala de igualitarismo, edad y nivel educacional. Esta asociación es estadísticamente significativa a un 99% de nivel de confianza.   
+
++ *Modelo 2*: Para el caso de **Chile** se evidencia que ante el aumento en un decil de ingreso, el apoyo al gasto público en salud aumenta en 0.034 puntos dejando constante la escala de igualitarismo, edad y nivel educacional. Sin embargo, esta asociación no es significativa bajo ningún nivel de confianza. En consecuencia, no se puede afirmar que esta asociación ocurre a nivel poblacional.   
+
++ *Modelo 3*: Para el caso de **Suecia** el modelo muestra que ante aumento en un decil de ingreso, el apoyo al gasto público en salud aumenta en 0.019 puntos controlando por igualitarismo, edad y nivel educacional. Sin embargo, y tal como se observa para los datos de Chile, esta asociación no es significativa bajo ningún nivel de confianza.  
+
++ *Modelo 4*: Para los datos de **USA** se observa a  un 99% de nivel de confianza, que ante el aumento en un decil de ingreso, el apoyo al gasto público en salud disminuye en 0.187 puntos, *ceteris paribus*. 
+
+Finalmente, en base a las observaciones anteriores se concluye que **USA** es el país donde se observa el mayor efecto del ingreso sobre el apoyo del gasto público en salud. 
+
+---
+
+**4. Estime los coeficientes estandarizados para igualitarismo e ingreso para los cuatro modelos estimados, señalando cuál variable tendría el efecto más grande en cada modelo** 
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE, results = "asis"}
+#Generamos nuestras variables en puntaje z
+base$fondos_public_z <- scale(base$fondos_public)
+base$igualitarismo_z <- scale(base$igualitarismo)
+base$ingreso_z <- scale(base$ingreso)
+base$edad_z <- scale(base$edad)
+base$educacion_z <- scale(base$educacion)
+
+#Estimamos los modelos con coeficientes estandarizados 
+m1_std <- lm(fondos_public_z~igualitarismo_z + ingreso_z + edad_z + educacion_z, data=base)
+m2_std <- lm(fondos_public_z~igualitarismo_z + ingreso_z + edad_z + educacion_z, data=base, subset=(pais==152))
+m3_std <- lm(fondos_public_z~igualitarismo_z + ingreso_z + edad_z + educacion_z, data=base, subset=(pais==752))
+m4_std <- lm(fondos_public_z~igualitarismo_z + ingreso_z + edad_z + educacion_z, data=base, subset=(pais==840))
+
+#Tabla de calidad con los coeficientes estandarizados
+stargazer(m1_std,m2_std,m3_std,m4_std, title = "Modelos de regresión para apoyo al gasto público en salud (betas estandarizados)",
+          covariate.labels=c("Igualitarismo", "Ingreso", "Edad", "Nivel educacional", "Intercepto"),
+          column.labels=c("Todos los paises","Chile","Suecia","USA"), type ='html',
+           dep.var.caption  = "Variable Dependiente",
+          dep.var.labels   = "Escala de apoyo",
+          font.size = "small", align = TRUE, omit.stat=c("f", "ser"), column.sep.width = "30pt")
+```
+
+\
+
++ Para el modelo 1 que considera **todos los países** de la muestra se observa que el coeficiente de igualitarismo tiene la asociación más fuerte a un 99% de nivel de confianza. En otras palabras, con un aumento de una desviación estándar en la escala de igualitarismo, se espera que el apoyo al gasto público en salud aumente en 0.084 desviaciones estándar siendo significativa a un 99% de nivel de confianza dejando constante el ingreso, la edad y el nivel educacional. 
+
++ Para **Chile** se observa que el efecto más grande corresponde a la variable de igualitarismo al igual que el modelo 1. En este caso, un aumento de una desviación estándar en la escala de igualitarismo, se asocia a un aumento significativo en el gasto público en salud de 0.083 desviaciones estándar (p < 0.01) controlando por las covariables del modelo. 
+
++ Para **Suecia** se replican las observaciones previas. En este caso, un aumento de una desviación estándar en la escala de igualitarismo, se asocia a un aumento significativo en el gasto público en salud de 0.226 desviaciones estándar (p < 0.01), *ceteris paribus*
+
++ Para **USA** se observa el mismo patrón. En este caso, un aumento de una desviación estándar en la escala de igualitarismo, se asocia a un aumento de 0.232 desviaciones estándar en el gasto público en salud, siendo significativo a un 99% de nivel de confianza y controlando por el resto de las variables del modelo. 
+
+
+---
+
+
+**5. Evalúe la hipótesis que dice que el efecto del ingreso es igual al efecto del igualitarismo. Para ello, realice los respectivos tests de restricciones múltiples, señalando hipótesis nula e hipótesis alternativa. Realice los test para los datos de Chile, EEUU y Suecia. ¿Observa alguna diferencia?**
+
++ **¿Cuál es la hipótesis nula y alternativa?**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+car::linearHypothesis(m2, c("ingreso=igualitarismo"))
+car::linearHypothesis(m3, c("ingreso=igualitarismo"))
+car::linearHypothesis(m4, c("ingreso=igualitarismo"))
+```
+
+**Aún cuando los tres test resultan significativos, esto se da a distintos niveles de confianza. ¿Cómo se interpreta cada uno? ¿Qué significa que sean estadísticamente significativos?**
+
+---
+
+**6. Para el coeficiente de regresión de la variable igualitarismo, estime e interprete intervalos de confianza al 89%, 56% y 13%. Estime intervalos solo con procedimiento analítico y solo para la base con todos los países. Interprete los intervalos.**
+
+$$\beta_{1}igualitarismo_{} = 0.187$$
+$$SE(\beta_{1}igualitarismo_{}) = 0.011$$ 
+
++ Estimación intervalo: $$\beta_{1}escolaridad_{} \pm z*SE(\beta_{1}escolaridad_{}) $$
+
++ Valores de z/t: 
+    + 89% de nivel de confianza: **1.600**
+    + 56% de nivel de confianza: **0.770**
+    + 13% de nivel de confianza: **0.164**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+#Extraemos los elementos del modelo 1
+#Coeficiente de años de igualitarismo
+beta1 <- m1[["coefficients"]][["igualitarismo"]]
+beta1
+#Error estándar
+se <- sqrt(diag(vcov(m1)))
+se <- se[2]
+se
+```
+
++ **Estimación del intervalo a un 89% de nivel de confianza: [0.169 , 0.205]**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+beta1 - 1.600*se #IC Izquierdo
+beta1 + 1.600*se #IC Derecho
+```
+
++ **Estimación del intervalo a un 56% de nivel de confianza: [0.178 , 0.195]**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+beta1 - 0.770*se #IC Izquierdo
+beta1 + 0.770*se #IC Derecho
+```
+
++ **Estimación del intervalo a un 13% de nivel de confianza: [0.185 , 0.189]**
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE}
+beta1 - 0.164*se #IC Izquierdo
+beta1 + 0.164*se #IC Derecho
+```
+
+
++ En base a estos tres intervalos de confianza, se puede decir que la variable igualitarismo es significativa en los tres niveles de confianza. Esto quiere decir que si obtuviésemos muestras aleatorias infinitas, en los tres niveles de confianza estas nos permitirían encontrar un impacto positivo (no se incluye el cero) de similar magnitud a la que se encontró de educación sobre ingreso en el 13%, en el 56% y hasta en el 89% de ellas.
+
++ ¿Cómo se interpreta cada uno de los intervalos? ¿Qué ocurre cuando se disminuye el nivel de confianza?
+
+---
+
+**7. Estime la predicción de apoyo a gasto público para una persona que tiene el máximo nivel de igualitarismo y pertenece al grupo de ingreso más bajo. Deje constante el valor de edad y educación en sus respectivos promedios. Utilice los datos para cada país.**
+
++ Valor predicho
+
+```{r, echo=TRUE, eval=TRUE, warning=FALSE} 
+#Chile
+base_chile <- subset(base,pais==152)
+igualitarismo_max152 <- max(base_chile$igualitarismo)
+ingreso_min152 <- min(base_chile$ingreso)
+edad_prom152 <- mean(base_chile$edad)
+educ_prom152 <- mean(base_chile$educacion)
+
+beta0 <- m2[["coefficients"]][["(Intercept)"]]
+beta0
+beta1 <- m2[["coefficients"]][["igualitarismo"]]
+beta1
+beta2 <- m2[["coefficients"]][["ingreso"]]
+beta2
+beta3 <- m2[["coefficients"]][["edad"]]
+beta3
+beta4 <- m2[["coefficients"]][["educacion"]]
+beta4
+
+publicfunding_152= beta0 + beta1*igualitarismo_max152 + beta2*ingreso_min152 + beta3*edad_prom152 + beta4*educ_prom152
+publicfunding_152
+
+#Suecia
+base_suecia <- subset(base,pais==752)
+igualitarismo_max752 <- max(base_suecia$igualitarismo)
+ingreso_min752 <- min(base_suecia$ingreso)
+edad_prom752 <- mean(base_suecia$edad)
+educ_prom752 <- mean(base_suecia$educacion)
+
+beta0 <- m3[["coefficients"]][["(Intercept)"]]
+beta0
+beta1 <- m3[["coefficients"]][["igualitarismo"]]
+beta1
+beta2 <- m3[["coefficients"]][["ingreso"]]
+beta2
+beta3 <- m3[["coefficients"]][["edad"]]
+beta3
+beta4 <- m3[["coefficients"]][["educacion"]]
+beta4
+
+publicfunding_752= beta0 + beta1*igualitarismo_max752 + beta2*ingreso_min752 + beta3*edad_prom752 + beta4*educ_prom752
+publicfunding_752
+
+#USA
+base_usa <- subset(base,pais==840)
+igualitarismo_max840 <- max(base_usa$igualitarismo)
+ingreso_min840 <- min(base_usa$ingreso)
+edad_prom840 <- mean(base_usa$edad)
+educ_prom840 <- mean(base_usa$educacion)
+
+beta0 <- m3[["coefficients"]][["(Intercept)"]]
+beta0
+beta1 <- m3[["coefficients"]][["igualitarismo"]]
+beta1
+beta2 <- m3[["coefficients"]][["ingreso"]]
+beta2
+beta3 <- m3[["coefficients"]][["edad"]]
+beta3
+beta4 <- m3[["coefficients"]][["educacion"]]
+beta4
+
+publicfunding_840= beta0 + beta1*igualitarismo_max840 + beta2*ingreso_min840 + beta3*edad_prom840 + beta4*educ_prom840
+publicfunding_840
+ 
+```
+
+**¿Cómo se interpreta ese valor?**
+
+---
+
+**8. Solo con la muestra para Chile realice un test de White para evaluar si hay problemas de heterocedasticidad (señale: hipótesis nula y alternativa, estadístico de prueba, valor p estimado, decisión). ¿Será necesario utilizar errores estándares robustos?**
+
+Conceptualmente:
+
++ **Hipótesis nula**
+
+$${H_{0}}: Existe\ homocedasticidad$$
+
++ **Hipótesis alternativa**
+
+$${H_{1}}: Existe\ heterocedasticidad$$
+
+```{r eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+#install.packages("lmtest")
+library(lmtest)
+bptest(m1) %>% pander()
+```
+
++ **A un 95% nivel de confianza, no existe evidencia suficiente para rechazar la hipótesis nula. Sustantivamente, ¿cómo se interpretan estos resultados?**
+
+--- 
+
+# **Referencias**
+
+## Libro base control estadístico
+
+[Moore, David S. (2000). Estadística aplicada básica. Segunda edición. Barcelona: Antoni Bosh](https://www.dropbox.com/sh/t0s4r6yuzgcwt10/AAB9DxspiUmAqihGAITmhQpca?dl=0&preview=Moore+2000.pdf)
+
++ Caps 4.1 - 4.4, 6.1-6.5 y 7.3
+
+![](moore.png)
+
+## Libro base regresión
+
+[Wooldridge, Jeffrey M. (2009). Introducción a la econometría: un enfoque moderno. 4a edición. Mé́xico: Cengage Learning.](https://www.dropbox.com/sh/t0s4r6yuzgcwt10/AAB9DxspiUmAqihGAITmhQpca?dl=0&preview=Wooldridge+2010.pdf)
+
++ Caps 2.1 - 2.6, 3.1 - 3.5, 4.1 - 4.5, 5.1 & 6.3
+
+![](wold.jpeg)
+
+## Libro base del curso para el uso R
+
+[Fox, John y Sanford Weisberg (2019). An R Companion to Applied Regression. Third Edition. SAGE.](https://www.dropbox.com/sh/t0s4r6yuzgcwt10/AAB9DxspiUmAqihGAITmhQpca?dl=0&preview=Fox19.pdf)
+
++ Caps 1 y 2.
+
+![](fox.jpeg)
+
+
+## Ayudantías
+
+Puedes encontrar las carpetas con las ayudantías en pdf y bases de datos en el siguiente [Link](https://github.com/JDConejeros/SOL201S_Datos_3)  
+
+---
+
+
