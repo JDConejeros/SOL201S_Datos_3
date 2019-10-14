@@ -12,7 +12,7 @@ rm(list = ls()) #Limpiamos la memoria
 #Instalamos liberías de trabajo:
 #install.packages("dplyr")#Para manipulación de datos
 #install.packages("car")#Funciones para estimar regresiones
-#install.packages("readstata13") #lectura/importar de bases de datos en stata
+#install.packages("haven") #lectura/importar de bases de datos en stata
 #install.packages("stargazer") #Paquete que nos permite visualizar regresiones
 #install.packages("skimr") #Paquete de exploración de datos
 #install.packages("texreg") #visualizar regresiones
@@ -20,7 +20,7 @@ rm(list = ls()) #Limpiamos la memoria
 ##Cargar librerías:
 library(dplyr)
 library(car)          
-library(readstata13)  
+library(haven)  
 library(stargazer)  
 library(skimr)      
 
